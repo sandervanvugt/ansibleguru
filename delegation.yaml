@@ -1,0 +1,41 @@
+---
+- name: Deploy web servers and update DNS
+  hosts: web_servers
+  become: yes
+  vars:
+    dns_server: dns.example.com
+
+  tasks:
+    - name: Ensure Apache is installed
+      ansible.builtin.yum:
+        name: httpd
+        state: present
+
+    - name: Start and enable Apache
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Get the IP address of the web server
+      ansible.builtin.command: hostname -I
+      register: web_ip
+
+    - name: Update DNS server with new web server entry
+      ansible.builtin.command: >
+        /usr/bin/nsupdate -k /etc/rndc.key <<EOF
+        server {{ dns_server }}
+        update add {{ inventory_hostname }} 3600 A {{ web_ip.stdout }}
+        send
+        EOF
+      delegate_to: "{{ dns_server }}"
+
+    - name: Confirm DNS entry
+      ansible.builtin.command: dig +short {{ inventory_hostname }} @{{ dns_server }}
+      register: dns_result
+      delegate_to: localhost
+
+    - name: Print DNS confirmation result
+      ansible.builtin.debug:
+        msg: "DNS entry for {{ inventory_hostname }}: {{ dns_result.stdout }}"
+
